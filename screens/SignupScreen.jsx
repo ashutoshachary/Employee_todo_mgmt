@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Image, View, ScrollView, StyleSheet, Dimensions } from 'react-native';
+import { Image, View, ScrollView, StyleSheet, Dimensions ,ActivityIndicator} from 'react-native';
 import { TextInput, Button, Text, RadioButton, HelperText, Checkbox } from 'react-native-paper';
-import * as ImagePicker from 'expo-image-picker';
-import * as DocumentPicker from 'expo-document-picker';
-import DateTimePicker from '@react-native-community/datetimepicker';
+
+import DatePicker from 'react-native-datepicker';
+
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Picker } from '@react-native-picker/picker';
 import { API_URL } from '../api-endpoints/API_URL';
@@ -11,10 +12,14 @@ import { hashPassword } from '../pass-protect/hashPassword';
 import SearchableDepartmentPicker from './SearchDepartment';
 import { getAuthData, getAuthToken, makeAuthenticatedRequest, clearAuthData } from '../token-data/apiutils';
 import CircularPhotoUpload from './PhotoUpload';
+import * as DocumentPicker from "expo-document-picker";
+import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system";
+import { uploadFileToS3 } from '../token-data/uplodaer';
 
-// import Pdf from 'react-native-pdf';
 
-
+// In your API_URL.js or similar configuration file
+export const API_URL111 = 'http://192.168.207.99:5000';  // or your actual server URL
 const DEPARTMENTS = [
   'FINANCE', 'HUMAN_RESOURCES', 'MARKETING', 'RESEARCH_AND_DEVELOPMENT',
   'IT', 'CUSTOMER_SERVICE', 'OPERATIONS_MANAGEMENT', 'ADMINISTRATION',
@@ -50,6 +55,7 @@ export default function SignupScreen({ navigation, setIsAuthenticated }) {
   const [confirmPassword, setConfirmPassword] = useState('');
 
   const [passwordVisible, setPasswordVisible] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleTogglePasswordVisibility = () => {
     setPasswordVisible(prev => !prev);
@@ -115,33 +121,95 @@ export default function SignupScreen({ navigation, setIsAuthenticated }) {
     return Object.keys(newErrors).length === 0;
   };
 
-  const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 1,
-    });
+  // const pickImage = async () => {
+  //   const result = await ImagePicker.launchImageLibraryAsync({
+  //     mediaTypes: ImagePicker.MediaTypeOptions.Images,
+  //     allowsEditing: true,
+  //     aspect: [4, 3],
+  //     quality: 1,
+  //   });
 
-    if (!result.canceled && result.assets.length > 0) {
-      setFormData({ ...formData, photoUrl: result.assets[0].uri });
-      console.log("Image URI:", result.assets[0].uri);
+  //   if (!result.canceled && result.assets.length > 0) {
+  //     setFormData({ ...formData, photoUrl: result.assets[0].uri });
+  //     console.log("Image URI:", result.assets[0].uri);
+  //   }
+  // };
+
+  // const pickDocument = async () => {
+  //   const result = await DocumentPicker.getDocumentAsync({
+  //     type: 'application/pdf',
+  //   });
+
+  //   if (result.canceled) {
+  //     console.log("Document picking was canceled.");
+  //     return;
+  //   }
+
+  //   if (result.assets && result.assets.length > 0) {
+  //     setFormData({ ...formData, resumeUrl: result.assets[0].uri });
+  //     console.log("Resume URI:", result.assets[0].uri);
+  //   }
+  // };
+
+
+  const pickImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 1,
+      });
+  
+      if (!result.canceled && result.assets.length > 0) {
+        // Show loading state
+        setIsLoading(true);
+        
+        try {
+          const fileUrl = await uploadFileToS3(result.assets[0].uri, 'jpeg');
+          setFormData({
+            ...formData,
+            photoUrl: fileUrl
+          });
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    } catch (error) {
+      console.error('Error picking/uploading image:', error);
+      setErrors(prev => ({
+        ...prev,
+        photoUpload: 'Failed to upload image. Please try again.'
+      }));
     }
   };
-
+  
   const pickDocument = async () => {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: 'application/pdf',
-    });
-
-    if (result.canceled) {
-      console.log("Document picking was canceled.");
-      return;
-    }
-
-    if (result.assets && result.assets.length > 0) {
-      setFormData({ ...formData, resumeUrl: result.assets[0].uri });
-      console.log("Resume URI:", result.assets[0].uri);
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/pdf',
+      });
+  
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        // Show loading state
+        setIsLoading(true);
+        
+        try {
+          const fileUrl = await uploadFileToS3(result.assets[0].uri, 'pdf');
+          setFormData({
+            ...formData,
+            resumeUrl: fileUrl
+          });
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    } catch (error) {
+      console.error('Error picking/uploading document:', error);
+      setErrors(prev => ({
+        ...prev,
+        resumeUpload: 'Failed to upload resume. Please try again.'
+      }));
     }
   };
 
@@ -221,7 +289,7 @@ export default function SignupScreen({ navigation, setIsAuthenticated }) {
         photoUrl={formData.photoUrl}
         onPress={pickImage}
       />
-
+{isLoading && <ActivityIndicator size="large" color="#510ac9" />}
       <TextInput
         label="Name"
         value={formData.employeeName}
@@ -351,7 +419,7 @@ export default function SignupScreen({ navigation, setIsAuthenticated }) {
         Select Date of Birth {new Date(formData.dateOfBirth).toLocaleDateString()}
       </Button>
       {showDatePicker && (
-        <DateTimePicker
+        <DatePicker
           value={new Date(formData.dateOfBirth)}
           mode="date"
           onChange={handleDateChange}

@@ -1,16 +1,43 @@
-// screens/SigninScreen.js
-import React, { useState } from 'react';
-import { View, StyleSheet, } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, StyleSheet, Linking } from 'react-native';
 import { TextInput, Button, Text, HelperText } from 'react-native-paper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as WebBrowser from 'expo-web-browser';
 import { API_URL } from '../api-endpoints/API_URL';
-import { hashPassword } from '../pass-protect/hashPassword';
 
 export default function SigninScreen({ setIsAuthenticated }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
+
+  // Google OAuth Configuration
+  const googleAuth = {
+    client_id: '608175201687-466vui4m94sd72tt2dhph1disi16i21j.apps.googleusercontent.com',
+    redirect_uri: 'http://localhost:8083/api/auth/google',
+    response_type: 'token',
+    scope: 'email profile',
+  };
+
+  useEffect(() => {
+    // Add event listener for deep linking
+    const subscription = Linking.addEventListener('url', handleDeepLink);
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
+  const handleDeepLink = async (event) => {
+    if (event.url) {
+      const url = new URL(event.url);
+      const params = new URLSearchParams(url.hash.substring(1));
+      const accessToken = params.get('access_token');
+      
+      if (accessToken) {
+        await handleGoogleSuccess(accessToken);
+      }
+    }
+  };
 
   const handleTogglePasswordVisibility = () => {
     setPasswordVisible(prev => !prev);
@@ -27,41 +54,41 @@ export default function SigninScreen({ setIsAuthenticated }) {
     }
   };
 
-  // Add this function to get the stored token
-  const getAuthToken = async () => {
+  const handleGoogleLogin = async () => {
     try {
-      return await AsyncStorage.getItem('token');
-    } catch (error) {
-      console.error('Error getting token:', error);
-      return null;
-    }
-  };
-  const makeAuthenticatedRequest = async (url, options = {}) => {
-    const token = await getAuthToken();
+      const queryString = Object.entries(googleAuth)
+        .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
+        .join('&');
+        // console.log(queryString);
+      
+      const result = await WebBrowser.openAuthSessionAsync(
+        `https://accounts.google.com/o/oauth2/v2/auth?${queryString}`,
+        googleAuth.redirect_uri
+      );
+      console.log(result);
 
-    return fetch(url, {
-      ...options,
-      headers: {
-        ...options.headers,
-        'Authorization': `Bearer ${token}`,
-      },
-    });
+      if (result.type === 'success') {
+        const params = new URLSearchParams(result.url.split('#')[1]);
+        const accessToken = params.get('access_token');
+        if (accessToken) {
+          await handleGoogleSuccess(accessToken);
+        }
+      }
+    } catch (error) {
+      console.error('Google auth error:', error);
+      setError('Google sign-in failed');
+    }
   };
 
   const handleSignin = async () => {
-    const token = await getAuthToken();
-    console.log(token)
     try {
       const response = await fetch(
         `${API_URL}/api/employees/signin?email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`,
-        {
-          method: 'POST',
-        }
+        { method: 'POST' }
       );
-
+      
       if (response.ok) {
         const data = await response.json();
-        // Store both token and userId
         await storeAuthData(data.token, data.id);
         setIsAuthenticated(true);
       } else {
@@ -72,10 +99,35 @@ export default function SigninScreen({ setIsAuthenticated }) {
     }
   };
 
+  const handleGoogleSuccess = async (accessToken) => {
+    try {
+      const response = await fetch(`${API_URL}/api/auth/google`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          token: accessToken,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        await storeAuthData(data.token, data.id);
+        setIsAuthenticated(true);
+      } else {
+        setError('Google sign-in failed');
+      }
+    } catch (error) {
+      console.error('Google sign-in error:', error);
+      setError('Google sign-in failed');
+    }
+  };
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Sign In</Text>
-
+      
       <TextInput
         label="Email"
         value={email}
@@ -84,16 +136,16 @@ export default function SigninScreen({ setIsAuthenticated }) {
         style={styles.input}
         theme={{
           colors: {
-            primary: '#510ac9', // Color when focused
-            text: '#000', // Text color
-            placeholder: '#510ac9', // Placeholder color
-            background: '#fff', // Background color
-            outlineColor: '#510ac9', // Border color when NOT focused (for outlined variant)
-            onSurface: '#510ac9', // Placeholder color
+            primary: '#510ac9',
+            text: '#000',
+            placeholder: '#510ac9',
+            background: '#fff',
+            outlineColor: '#510ac9',
+            onSurface: '#510ac9',
           },
         }}
       />
-
+      
       <TextInput
         label="Password"
         value={password}
@@ -102,12 +154,12 @@ export default function SigninScreen({ setIsAuthenticated }) {
         style={styles.input}
         theme={{
           colors: {
-            primary: '#510ac9', // Color when focused
-            text: '#000', // Text color
-            placeholder: '#510ac9', // Placeholder color
-            background: '#fff', // Background color
-            outlineColor: '#510ac9', // Border color when NOT focused (for outlined variant)
-            onSurface: '#510ac9', // Placeholder color
+            primary: '#510ac9',
+            text: '#000',
+            placeholder: '#510ac9',
+            background: '#fff',
+            outlineColor: '#510ac9',
+            onSurface: '#510ac9',
           },
         }}
         right={
@@ -125,8 +177,22 @@ export default function SigninScreen({ setIsAuthenticated }) {
         </HelperText>
       ) : null}
 
-      <Button mode="contained" onPress={handleSignin} style={styles.button} textColor='#fff'>
+      <Button
+        mode="contained"
+        onPress={handleSignin}
+        style={styles.button}
+        textColor='#fff'
+      >
         Sign In
+      </Button>
+
+      <Button
+        mode="outlined"
+        onPress={handleGoogleLogin}
+        style={[styles.button, styles.googleButton]}
+        textColor='#510ac9'
+      >
+        Sign in with Google
       </Button>
     </View>
   );
@@ -135,33 +201,27 @@ export default function SigninScreen({ setIsAuthenticated }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
     padding: 20,
-    backgroundColor: '#f9f9f9',
+    justifyContent: 'center',
   },
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    textAlign: 'center',
+    fontSize: 24,
     marginBottom: 20,
-    color: '#333',
+    textAlign: 'center',
+    color: '#000',
   },
   input: {
+    marginBottom: 10,
     backgroundColor: '#fff',
-    marginBottom: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    paddingHorizontal: 10,
   },
   button: {
     marginTop: 10,
-    borderRadius: 8,
-    paddingVertical: 10,
-    alignItems: 'center',
     backgroundColor: '#510ac9',
-    
-    
+  },
+  googleButton: {
+    marginTop: 10,
+    backgroundColor: 'transparent',
+    borderColor: '#510ac9',
+    borderWidth: 1,
   },
 });
-

@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Image, SafeAreaView, ScrollView, View, StyleSheet, Alert, Modal, TouchableOpacity } from 'react-native';
+import { Image, SafeAreaView, ScrollView, View, StyleSheet, Alert, Modal, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Checkbox, TextInput, Button, Text, RadioButton, HelperText } from 'react-native-paper';
 import { Picker } from '@react-native-picker/picker';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DatePicker from 'react-native-datepicker';
 import { API_URL } from '../api-endpoints/API_URL';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { makeAuthenticatedRequest, getAuthToken, makePutRequest } from '../token-data/apiutils';
 import SearchableDepartmentPicker from './SearchDepartment';
 import CircularPhotoUpload from './PhotoUpload';
+import { API_URL111 } from './SignupScreen';
+import { uploadFileToS3 } from '../token-data/uplodaer';
 
 // Department Options
 const DEPARTMENTS = [
@@ -43,6 +45,7 @@ export default function UpdateProfileModal({ visible, onClose, employee, onUpdat
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [token, setToken] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     getAuthToken().then(token => setToken(token));
@@ -70,54 +73,104 @@ export default function UpdateProfileModal({ visible, onClose, employee, onUpdat
     }
   }, [employee]);
 
+  // const handlePickPhoto = async () => {
+  //   try {
+  //     const result = await ImagePicker.launchImageLibraryAsync({
+  //       mediaTypes: ImagePicker.MediaTypeOptions.Images,
+  //       allowsEditing: true,
+  //       aspect: [4, 3],
+  //       quality: 1,
+  //     });
+
+  //     if (!result.canceled) {
+  //       setFormData({ ...formData, photoUrl: result.assets[0].uri });
+  //     }
+  //   } catch (error) {
+  //     console.error('Image Picker Error:', error);
+  //     Alert.alert('Error', 'Failed to pick an image');
+  //   }
+  // };
+
+  // const pickDocument = async () => {
+  //   const result = await DocumentPicker.getDocumentAsync({
+  //     type: 'application/pdf',
+  //   });
+
+  //   if (result.canceled) {
+  //     console.log("Document picking was canceled.");
+  //     return;
+  //   }
+
+  //   if (result.assets && result.assets.length > 0) {
+  //     setFormData({ ...formData, resumeUrl: result.assets[0].uri });
+  //     console.log("Resume URI:", result.assets[0].uri);
+  //   }
+  // };
+
+
   const handlePickPhoto = async () => {
+     try {
+          const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            aspect: [4, 3],
+            quality: 1,
+          });
+      
+          if (!result.canceled && result.assets.length > 0) {
+            // Show loading state
+            setIsLoading(true);
+            
+            try {
+              const fileUrl = await uploadFileToS3(result.assets[0].uri, 'jpeg');
+              setFormData({
+                ...formData,
+                photoUrl: fileUrl
+              });
+            } finally {
+              setIsLoading(false);
+            }
+          }
+        } catch (error) {
+          console.error('Error picking/uploading image:', error);
+          setErrors(prev => ({
+            ...prev,
+            photoUpload: 'Failed to upload image. Please try again.'
+          }));
+        }
+   };
+   
+   const pickDocument = async () => {
     try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 1,
-      });
+          const result = await DocumentPicker.getDocumentAsync({
+            type: 'application/pdf',
+          });
+      
+          if (!result.canceled && result.assets && result.assets.length > 0) {
+            // Show loading state
+            setIsLoading(true);
+            
+            try {
+              const fileUrl = await uploadFileToS3(result.assets[0].uri, 'pdf');
+              setFormData({
+                ...formData,
+                resumeUrl: fileUrl
+              });
+            } finally {
+              setIsLoading(false);
+            }
+          }
+        } catch (error) {
+          console.error('Error picking/uploading document:', error);
+          setErrors(prev => ({
+            ...prev,
+            resumeUpload: 'Failed to upload resume. Please try again.'
+          }));
+        }
+   };
 
-      if (!result.canceled) {
-        setFormData({ ...formData, photoUrl: result.assets[0].uri });
-      }
-    } catch (error) {
-      console.error('Image Picker Error:', error);
-      Alert.alert('Error', 'Failed to pick an image');
-    }
-  };
 
-  const handlePickResume = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: 'application/pdf',
-        copyToCacheDirectory: true,
-      });
 
-      if (result.type === 'success') {
-        setFormData({ ...formData, resumeUrl: result.uri });
-      }
-    } catch (error) {
-      console.error('Document Picker Error:', error);
-      Alert.alert('Error', 'Failed to pick a document');
-    }
-  };
-  const pickDocument = async () => {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: 'application/pdf',
-    });
-
-    if (result.canceled) {
-      console.log("Document picking was canceled.");
-      return;
-    }
-
-    if (result.assets && result.assets.length > 0) {
-      setFormData({ ...formData, resumeUrl: result.assets[0].uri });
-      console.log("Resume URI:", result.assets[0].uri);
-    }
-  };
   const validatePassword = (password) => {
     let errorMessage = '';
 
@@ -196,6 +249,7 @@ export default function UpdateProfileModal({ visible, onClose, employee, onUpdat
     <Modal visible={visible} animationType="slide" transparent>
       <View style={styles.modalOverlay}>
         <ScrollView showsVerticalScrollIndicator={false}>
+        
           <View style={styles.modalContainer}>
             <View style={{flex : 1, flexDirection: 'row',justifyContent: 'space-between', alignItems: 'center'}}>
             <Text style={styles.title}>Update Profile</Text>
@@ -276,7 +330,7 @@ export default function UpdateProfileModal({ visible, onClose, employee, onUpdat
             <Text style={styles.label}>Date of Birth</Text>
             <Button onPress={() => setShowDatePicker(true)} textColor='#510ac9' style={{borderWidth:1,borderColor:'#999090'}}>Select Date {employee.dateOfBirth}</Button>
             {showDatePicker && (
-              <DateTimePicker
+              <DatePicker
                 value={formData.dateOfBirth}
                 maximumDate={yesterday}
                 textColor='#510ac9'
@@ -316,6 +370,7 @@ export default function UpdateProfileModal({ visible, onClose, employee, onUpdat
               photoUrl={formData.photoUrl}
               onPress={handlePickPhoto}
             />
+            {isLoading && <ActivityIndicator size="large" color="#510ac9" />}
 
             <Text style={styles.label}>Resume</Text>
             <Button onPress={pickDocument} textColor='#510ac9'>

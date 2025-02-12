@@ -3,7 +3,7 @@ import {Text, View, FlatList, StyleSheet, Platform , Alert} from 'react-native';
 import { TextInput, Button, Card, Title, Paragraph } from 'react-native-paper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { format } from 'date-fns';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DatePicker from 'react-native-datepicker';
 import { API_URL } from '../api-endpoints/API_URL';
 import { makeAuthenticatedRequest, getAuthData } from '../token-data/apiutils';
 
@@ -156,7 +156,7 @@ export default function TodoScreen() {
       </View>
 
       {showDatePicker && (
-        <DateTimePicker
+        <DatePicker
           value={selectedDate}
           mode="date"
           display="default"
